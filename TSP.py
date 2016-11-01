@@ -3,6 +3,7 @@ import random
 import math
 import matplotlib.pyplot as plt
 import matplotlib.path as mpath
+import cProfile, pstats, StringIO
 
 
 class Node(object):
@@ -32,7 +33,8 @@ cities = []
 N = 0
 inf = float("inf")
 MAX_X, MIN_X, MAX_Y, MIN_Y, WIDTH, HEIGHT, MAX_VALUE = -inf, inf, -inf, inf, inf, inf, inf
-
+BMU_cache = {}
+STEPS = 1000
 
 def init():
     global w, cities, N, MAX_VALUE
@@ -45,9 +47,12 @@ def init():
 
 def generateRandomNodes(n):
     nodes = []
+    center_x = MIN_X + WIDTH / 2
+    center_y = MIN_Y + HEIGHT / 2
+    radius = min(WIDTH, HEIGHT) / 6
     for i in range(n):
-        x = random.uniform(MIN_X + WIDTH / 4, MAX_X - WIDTH / 4)
-        y = random.uniform(MIN_Y + HEIGHT / 4, MAX_Y - HEIGHT / 4)
+        x = center_x + math.cos(2*math.pi/n*i)*radius
+        y = center_y + math.sin(2*math.pi/n*i)*radius
 
         node = Node(x / MAX_VALUE, y / MAX_VALUE)
 
@@ -71,90 +76,85 @@ def normalize(list):
 
 
 def SOM(count):
-    global w
-    for city in cities:
-        min_distance = inf
+    global w, BMU_cache
+    indexes = [x for x in range(len(cities))]
+    random.shuffle(indexes)
+    for index in indexes:
+        city = cities[index]
         BMU = None
-        for node in w:
-            distance = euclidean_distance(node.x, city[0], node.y, city[1])
-            if distance < min_distance:
-                min_distance = distance
-                BMU = node
-        for j in range(len(w)):
-            neighbour = w[j]
-            distance = neighbour_count(BMU, neighbour)
+        if count == 0:
+            min_distance = inf
 
-            if distance < radius():
-                w[j].x += learning_function(count) * neighbourhood_function(BMU, neighbour) * (city[0] - w[j].x)
-                w[j].y += learning_function(count) * neighbourhood_function(BMU, neighbour) * (city[1] - w[j].y)
-                #print "L", learning_function(count)
-                #print "N", neighbourhood_function(BMU, neighbour)
-                #print "count", count
+            for node in w:
+                distance = euclidean_distance(node.x, city[0], node.y, city[1])
+
+                if distance < min_distance:
+                    min_distance = distance
+                    BMU = node
+            BMU_cache[str(city[0])+str(city[1])] = BMU
+        else:
+            prev_BMU = BMU_cache[str(city[0])+str(city[1])]
+            min_distance = euclidean_distance(prev_BMU.x, city[0], prev_BMU.y, city[1])
+            current_node = prev_BMU
+            BMU = prev_BMU
+            for j in range(1,10):
+                neighbour = current_node.nxt
+                distance = euclidean_distance(neighbour.x, city[0], neighbour.y, city[1])
+                if distance < min_distance:
+                    min_distance = distance
+                    BMU = neighbour
+                current_node = neighbour
+            for j in range(1,10):
+                neighbour = current_node.prev
+                distance = euclidean_distance(neighbour.x, city[0], neighbour.y, city[1])
+                if distance < min_distance:
+                    min_distance = distance
+                    BMU = neighbour
+                current_node = neighbour
+            BMU_cache[str(city[0])+str(city[1])] = BMU
 
 
+
+        current_node = BMU
+        BMU.x += learning_function(count) * neighbourhood_function(distance) * (city[0] - BMU.x)
+        BMU.y += learning_function(count) * neighbourhood_function(distance) * (city[1] - BMU.y)
+        for j in range(1,radius(count)):
+            neighbour = current_node.nxt
+            distance = j
+
+            if distance < radius(count):
+                neighbour.x += learning_function(count) * neighbourhood_function(distance) * (city[0] - neighbour.x)
+                neighbour.y += learning_function(count) * neighbourhood_function(distance) * (city[1] - neighbour.y)
+            current_node = neighbour
+
+        current_node = BMU
+        for j in range(1,radius(count)):
+            neighbour = current_node.prev
+            distance = j
+
+            if distance < radius(count):
+                neighbour.x += learning_function(count) * neighbourhood_function(distance) * (city[0] - neighbour.x)
+                neighbour.y += learning_function(count) * neighbourhood_function(distance) * (city[1] - neighbour.y)
+            current_node = neighbour
 
 def learning_function(count):
-    return 1.0 - float(count / 2000)
+    #return 0.99 Constant
+    #return 1.0 - float(count / STEPS) # Linear
+    return math.exp(-count/100) # exp
 
 
-def radius():
-    return len(w) / 20
+def radius(count):
+    #return len(w) / 10 # Constant
+    start_radius = len(w) / 10
+    #return int(start_radius - float(float(count) / float(STEPS)) * start_radius) # Linear
+    return int(start_radius * math.exp(-count/100)) # exp
 
-def neighbourhood_function(BMU, neighbour):
-    return 1.0 / float(neighbour_count(BMU, neighbour) + 1.0)
+def neighbourhood_function(distance):
+    return 1.0 / float(distance + 1.0) # Exp
 
 
 def euclidean_distance(x1, x2, y1, y2):
     return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
-
-def neighbour_road_length(n1, n2):
-    current_node = n1.prev
-    prev_distance = 0
-    next_distance = 0
-
-    for i in range(len(w)):
-        prev_distance += euclidean_distance(n1.x , current_node.x, n1.y, current_node.y)
-
-        if current_node.x == n2.x and current_node.y == n2.y:
-            break
-        else:
-            current_node = current_node.prev
-
-    current_node = n1.nxt
-    for i in range(len(w)):
-        next_distance += euclidean_distance(n1.x , current_node.x, n1.y, current_node.y)
-
-        if current_node.x == n2.x and current_node.y == n2.y:
-            break
-        else:
-            current_node = current_node.nxt
-    return min(prev_distance, next_distance)
-
-def neighbour_count(n1, n2):
-    if n1.x == n2.x and n1.y == n2.y:
-        return 0
-
-    current_node = n1.prev
-    prev_count = 0
-    next_count = 0
-
-    for i in range(len(w)):
-
-        if current_node.x == n2.x and current_node.y == n2.y:
-            prev_count = i + 1
-            break
-        else:
-            current_node = current_node.prev
-
-    current_node = n1.nxt
-    for i in range(len(w)):
-
-        if current_node.x == n2.x and current_node.y == n2.y:
-            next_count = i + 1
-            break
-        else:
-            current_node = current_node.nxt
-    return min(prev_count, next_count)
 
 
 def loadCities(city):
@@ -184,13 +184,25 @@ def nodes_to_data(nodes):
     return np.array(list)
 
 def main():
+    #pr = cProfile.Profile()
+    #pr.enable()
+
+
     init()
 
-    plot(nodes_to_data(w), 10000)
-    for i in range(2000):
-        SOM(i)
-        #if i % 300 == 0:
     plot(nodes_to_data(w), 30)
+    for i in range(STEPS):
+        SOM(i)
+        if i % 301 == 0:
+            plot(nodes_to_data(w), 30)
+    plot(nodes_to_data(w), 30)
+
+    #pr.disable()
+    #s = StringIO.StringIO()
+    #sortby = 'tottime'
+    #ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    #ps.print_stats()
+    #print s.getvalue()
 
 
 def plot(data, code):
@@ -202,6 +214,7 @@ def plot(data, code):
 
     color = plt.get_cmap('jet')(code)
     ax.scatter(data[:, 0], data[:, 1], color=color)
+    ax.plot(data[:, 0], data[:, 1], color=color)
 
     plt.show()
 
