@@ -116,15 +116,14 @@ def SOM(count):
 
 
         current_node = BMU
-        BMU.x += learning_function(count) * neighbourhood_function(distance) * (city[0] - BMU.x)
-        BMU.y += learning_function(count) * neighbourhood_function(distance) * (city[1] - BMU.y)
+        updateNode(BMU,city, count, distance)
+
         for j in range(1,radius(count)):
             neighbour = current_node.nxt
             distance = j
 
             if distance < radius(count):
-                neighbour.x += learning_function(count) * neighbourhood_function(distance) * (city[0] - neighbour.x)
-                neighbour.y += learning_function(count) * neighbourhood_function(distance) * (city[1] - neighbour.y)
+                updateNode(neighbour,city,count, distance)
             current_node = neighbour
 
         current_node = BMU
@@ -133,9 +132,12 @@ def SOM(count):
             distance = j
 
             if distance < radius(count):
-                neighbour.x += learning_function(count) * neighbourhood_function(distance) * (city[0] - neighbour.x)
-                neighbour.y += learning_function(count) * neighbourhood_function(distance) * (city[1] - neighbour.y)
+                updateNode(neighbour,city,count, distance)
             current_node = neighbour
+
+def updateNode(node, city, count, distance):
+    node.x += learning_function(count) * neighbourhood_function(distance) * (city[0] - node.x)
+    node.y += learning_function(count) * neighbourhood_function(distance) * (city[1] - node.y)
 
 def learning_function(count):
     #return 0.99 Constant
