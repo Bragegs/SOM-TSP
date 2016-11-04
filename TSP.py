@@ -25,6 +25,12 @@ class Node(object):
     def set_y(self, y):
         self.y = y
 
+    def __hash__(self):
+        return hash(str(self.x) + str(self.y))
+    
+    def __eq__(self, node):
+        return self.x == node.x and self.y == node.y
+
 #=============================================================
 
 # GLOBALS
@@ -35,10 +41,12 @@ inf = float("inf")
 MAX_X, MIN_X, MAX_Y, MIN_Y, WIDTH, HEIGHT, MAX_VALUE = -inf, inf, -inf, inf, inf, inf, inf
 BMU_cache = {}
 STEPS = 1000
+BMU_NEIGHBOURHOOD = 10
+EXP_MOD = float(STEPS / 4.0)
 
 def init():
     global w, cities, N, MAX_VALUE
-    cities = loadCities("western-sahara")
+    cities = loadCities("uruguay")
     MAX_VALUE = np.array(cities).max()
     cities = normalize(cities)
     N = len(cities)
@@ -97,14 +105,14 @@ def SOM(count):
             min_distance = euclidean_distance(prev_BMU.x, city[0], prev_BMU.y, city[1])
             current_node = prev_BMU
             BMU = prev_BMU
-            for j in range(1,10):
+            for j in range(1,BMU_NEIGHBOURHOOD):
                 neighbour = current_node.nxt
                 distance = euclidean_distance(neighbour.x, city[0], neighbour.y, city[1])
                 if distance < min_distance:
                     min_distance = distance
                     BMU = neighbour
                 current_node = neighbour
-            for j in range(1,10):
+            for j in range(1,BMU_NEIGHBOURHOOD):
                 neighbour = current_node.prev
                 distance = euclidean_distance(neighbour.x, city[0], neighbour.y, city[1])
                 if distance < min_distance:
@@ -112,8 +120,6 @@ def SOM(count):
                     BMU = neighbour
                 current_node = neighbour
             BMU_cache[str(city[0])+str(city[1])] = BMU
-
-
 
         current_node = BMU
         updateNode(BMU,city, count, distance)
@@ -135,21 +141,59 @@ def SOM(count):
                 updateNode(neighbour,city,count, distance)
             current_node = neighbour
 
+def find_path():
+    path = []
+    node_to_cities = {}
+    for city in cities:
+        node = BMU_cache[str(city[0])+str(city[1])]
+
+        if node not in node_to_cities.keys():
+            node_to_cities[node] = []
+        node_to_cities[node].append(city)
+
+    current_node = node_to_cities.keys()[0]
+    for i in range(len(w)):
+        if current_node in node_to_cities.keys():
+            towns = node_to_cities[current_node]
+            if len(path) > 0:
+                temp_map = {}
+                for town in towns:
+                    distance = euclidean_distance(town[0], path[-1][0], town[1], path[-1][1])
+                    temp_map[distance] = town
+                sorted_keys = temp_map.keys()
+                sorted_keys.sort()
+                for key in sorted_keys:
+                    path.append(temp_map[key])
+            else:
+                path.extend(towns)
+        current_node = current_node.nxt
+    path.append(path[0])
+    return np.array(path)
+
+def total_distance(path):
+    total_distance = 0
+    for i in range(len(path)-1):
+        city1 = path[i]
+        city2 = path[i+1]
+        distance = euclidean_distance(city1[0], city2[0],city1[1],city2[1])
+        total_distance += distance
+    return total_distance * MAX_VALUE
+
 def updateNode(node, city, count, distance):
     node.x += learning_function(count) * neighbourhood_function(distance) * (city[0] - node.x)
     node.y += learning_function(count) * neighbourhood_function(distance) * (city[1] - node.y)
 
 def learning_function(count):
-    #return 0.99 Constant
+    #return 0.80 #Constant
     #return 1.0 - float(count / STEPS) # Linear
-    return math.exp(-count/100) # exp
+    return math.exp(float(float(-count)/EXP_MOD)) # exp
 
 
 def radius(count):
-    #return len(w) / 10 # Constant
-    start_radius = len(w) / 10
+    #return min(len(w) / 10, 50) # Constant
+    start_radius = min(len(w) / 10,50)
     #return int(start_radius - float(float(count) / float(STEPS)) * start_radius) # Linear
-    return int(start_radius * math.exp(-count/100)) # exp
+    return int(start_radius * math.exp(float(float(-count)/EXP_MOD))) # exp
 
 def neighbourhood_function(distance):
     return 1.0 / float(distance + 1.0) # Exp
@@ -183,6 +227,7 @@ def nodes_to_data(nodes):
     list = []
     for node in nodes:
         list.append(np.array([node.x, node.y]))
+    list.append(list[0])
     return np.array(list)
 
 def main():
@@ -195,9 +240,15 @@ def main():
     plot(nodes_to_data(w), 30)
     for i in range(STEPS):
         SOM(i)
-        if i % 301 == 0:
-            plot(nodes_to_data(w), 30)
+        if i == 500:
+            plot(nodes_to_data(w),30)
+        if i % 100 == 0:
+            print i
+            print radius(i)
     plot(nodes_to_data(w), 30)
+    path = find_path()
+    print total_distance(path)
+    plot(path,30)
 
     #pr.disable()
     #s = StringIO.StringIO()
